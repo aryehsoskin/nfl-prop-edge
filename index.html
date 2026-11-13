@@ -50,6 +50,11 @@
   .tabs{display:flex;gap:4px;padding:0 24px;border-bottom:1px solid var(--line)}
   .tab{background:none;border:none;border-bottom:2px solid transparent;border-radius:0;padding:12px 14px;color:var(--muted);font-weight:600}
   .tab.on{color:var(--text);border-bottom-color:var(--accent)}
+  .sg{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:10px}
+  .sg-card{border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:6px}
+  .sg-card .hd{display:flex;justify-content:space-between;font-weight:700}
+  .sg-card ul{margin:0;padding-left:16px;font-size:13px}
+  .sg-card .meta{font-size:12px;color:var(--muted)}
   .bet-card{border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:8px;font-size:13px}
   .bet-card .top{display:flex;justify-content:space-between;gap:8px;font-weight:600}
   .bet-card .legs{color:var(--muted);font-size:12px;margin:4px 0 8px}
@@ -99,6 +104,14 @@
     </div>
     <div class="markets" id="markets"></div>
     <div class="status" id="status"></div>
+  </div>
+
+  <div class="panel" style="margin-top:16px" id="suggestPanel">
+    <div class="row" style="justify-content:space-between">
+      <strong>Suggested tickets</strong>
+      <div class="row"><button class="tab on" id="sgMid">Middle parlays</button><button class="tab" id="sgBomb">Bombers</button></div>
+    </div>
+    <div id="suggest"><p class="muted">Scan a game (or load demo data) and ticket ideas built from the board show up here.</p></div>
   </div>
 
   <div class="panel" style="margin-top:16px">
@@ -452,6 +465,7 @@ function render(){
       <td class="num">${stakeFor(r.tier) ? '$'+stakeFor(r.tier).toFixed(0) : '—'}</td>
       <td><button class="add ${inSlip?'ghost':''}" data-i="${id}" ${inSlip?'disabled':''}>${inSlip?'Added':'+ Slip'}</button></td></tr>`;
   }).join('') : `<tr><td colspan="12" class="muted">Nothing worth betting on this game right now. Set Show to "Everything" to see the full board, or rescan closer to kickoff.</td></tr>`;
+  if(typeof renderSuggest==='function') renderSuggest();
 }
 
 function renderSlip(){
@@ -494,8 +508,8 @@ $('stake').oninput = () => { const p = parlay(slip); if(slip.length) $('pWin').t
 const updUnit = () => { store('bank', $('bank').value); renderBets(); if(rows.length) render(); renderSlip(); };
 $('bank').oninput = updUnit;
 const preset = (minP, maxP, minEv) => { $('minP').value=minP; $('maxP').value=maxP; $('minEv').value=minEv; render(); };
-$('preSafe').onclick = () => preset('50','100','-3');
-$('preBomb').onclick = () => preset('0','45','-3');
+$('preSafe').onclick = () => { preset('50','100','-3'); sgMode='mid'; renderSuggest(); };
+$('preBomb').onclick = () => { preset('0','45','-3'); sgMode='bomb'; renderSuggest(); };
 $('preAll').onclick  = () => preset('0','100','-3');
 $('clearSlip').onclick = () => { slip=[]; renderSlip(); render(); };
 $('saveKey').onclick = () => { store('oddsKey', $('key').value.trim()); status('Key saved on this computer.'); };
@@ -526,6 +540,60 @@ function demoEvent(){
   return { home_team:'Miami Dolphins', away_team:'Buffalo Bills',
     bookmakers: Object.entries(byBook).map(([k,ms]) => mk(k,k,Object.entries(ms).map(([key,outcomes])=>({key,outcomes})))) };
 }
+
+// ---------- suggested tickets ----------
+let sgMode = 'mid';
+const SG_RULES = {
+  mid:  { sizes:[2,3],   minP:.15, maxP:.45, minEv:-1.5, label:'Middle parlay' },
+  bomb: { sizes:[3,4,5], minP:.03, maxP:.14, minEv:-3,   label:'Bomber' },
+};
+function combos(arr, k, start=0, cur=[], out=[]){
+  if(cur.length===k){ out.push(cur.slice()); return out; }
+  for(let i=start;i<arr.length;i++){ cur.push(arr[i]); combos(arr,k,i+1,cur,out); cur.pop(); }
+  return out;
+}
+function buildSuggestions(mode){
+  const R = SG_RULES[mode], minN = +$('minBooks').value;
+  const pool = rows.filter(r => ['bet','lean','action'].includes(r.tier) && r.n >= minN && ($('showEst').checked || !r.oneSided))
+                   .sort((a,b)=>b.ev-a.ev).slice(0,14);
+  let cands = [];
+  for(const k of R.sizes){
+    for(const c of combos(pool,k)){
+      if(new Set(c.map(l=>l.player)).size < c.length) continue;          // no two legs on one player
+      if(!c.some(l=>l.tier==='bet'||l.tier==='lean')) continue;           // must have an anchor
+      const p = parlay(c);
+      if(p.p < R.minP || p.p > R.maxP || p.ev < R.minEv) continue;
+      cands.push({legs:c, ...p});
+    }
+  }
+  cands.sort((a,b)=> b.ev - a.ev || b.p - a.p);
+  const picked = [];
+  for(const c of cands){                                                  // keep the options different from each other
+    if(picked.every(q => c.legs.filter(l=>q.legs.includes(l)).length < Math.min(c.legs.length, q.legs.length))) picked.push(c);
+    if(picked.length===3) break;
+  }
+  return picked;
+}
+function renderSuggest(){
+  $('sgMid').classList.toggle('on', sgMode==='mid'); $('sgBomb').classList.toggle('on', sgMode==='bomb');
+  if(!rows.length) return;
+  const list = buildSuggestions(sgMode);
+  if(!list.length){
+    const anchors = rows.filter(r=>r.tier==='bet'||r.tier==='lean').length;
+    $('suggest').innerHTML = `<p class="muted">${anchors ? `No ${SG_RULES[sgMode].label.toLowerCase()} on this board fits the rules (anchored, edge near or above zero, right hit chance). Try the other tab, or rescan closer to kickoff.` : `No Bet or Lean on this board, so there's no anchor to build around. That's a no-bet game for now.`}</p>`;
+    return;
+  }
+  const units = c => sgMode==='bomb' ? 0.5 : (c.ev >= 0 ? 1 : 0.5);
+  $('suggest').innerHTML = `<div class="sg">` + list.map((c,i) => `<div class="sg-card">
+      <div class="hd"><span>Option ${i+1} · ${c.legs.length} legs</span><span>${fmtAm(c.am)}</span></div>
+      <ul>${c.legs.map(l=>`<li><span class="v ${TIERS[l.tier][1]}">${TIERS[l.tier][0]}</span> ${l.player} ${l.side}${l.point!=null?' '+l.point:''} <span class="muted">${l.marketName}</span></li>`).join('')}</ul>
+      <div class="meta">Hits ~${(c.p*100).toFixed(0)}% · edge <b class="${c.ev>=0?'pos':''}">${c.ev>=0?'+':''}${c.ev.toFixed(1)}%</b> · stake ~$${(units(c)*unit()).toFixed(0)}</div>
+      <button class="ghost" data-sg="${i}">Load into slip</button>
+    </div>`).join('') + `</div><p class="note" style="margin-top:8px">Prices are leg by leg. Hard Rock's same-game price is usually lower, so check the app and type the price you get before you click Bet it.</p>`;
+  $('suggest').onclick = e => { const b = e.target.closest('button[data-sg]'); if(!b) return; slip = list[+b.dataset.sg].legs.slice(); renderSlip(); render(); };
+}
+$('sgMid').onclick = () => { sgMode='mid'; renderSuggest(); };
+$('sgBomb').onclick = () => { sgMode='bomb'; renderSuggest(); };
 
 // ---------- bet log UI ----------
 function logBet(){
