@@ -544,10 +544,10 @@ function demoEvent(){
 // ---------- suggested tickets ----------
 let sgMode = 'mid';
 const SG_RULES = {
-  2:    { sizes:[2],     minP:.20, maxP:.55, minEv:-1.5, label:'2-leg parlay' },
-  3:    { sizes:[3],     minP:.10, maxP:.40, minEv:-1.5, label:'3-leg parlay' },
-  4:    { sizes:[4],     minP:.04, maxP:.25, minEv:-2.5, label:'4-leg parlay' },
-  bomb: { sizes:[3,4,5], minP:.03, maxP:.14, minEv:-3,   label:'Bomber' },
+  2:    { sizes:[2],     minP:.20, maxP:.55, minEv:-1.5, label:'2-leg parlay', max:3 },
+  3:    { sizes:[3],     minP:.10, maxP:.40, minEv:-1.5, label:'3-leg parlay', max:Infinity },
+  4:    { sizes:[4],     minP:.04, maxP:.25, minEv:-2.5, label:'4-leg parlay', max:3 },
+  bomb: { sizes:[3,4,5], minP:.03, maxP:.14, minEv:-3,   label:'Bomber',       max:Infinity },
 };
 function combos(arr, k, start=0, cur=[], out=[]){
   if(cur.length===k){ out.push(cur.slice()); return out; }
@@ -557,7 +557,7 @@ function combos(arr, k, start=0, cur=[], out=[]){
 function buildSuggestions(mode){
   const R = SG_RULES[mode], minN = +$('minBooks').value;
   const pool = rows.filter(r => ['bet','lean','action'].includes(r.tier) && r.n >= minN && ($('showEst').checked || !r.oneSided))
-                   .sort((a,b)=>b.ev-a.ev).slice(0,14);
+                   .sort((a,b)=>b.ev-a.ev).slice(0, R.max===Infinity ? 18 : 14);
   let cands = [];
   for(const k of R.sizes){
     for(const c of combos(pool,k)){
@@ -569,10 +569,11 @@ function buildSuggestions(mode){
     }
   }
   cands.sort((a,b)=> b.ev - a.ev || b.p - a.p);
+  if(R.max===Infinity) return cands;                                      // every qualifying ticket, best edge first
   const picked = [];
   for(const c of cands){                                                  // keep the options different from each other
     if(picked.every(q => c.legs.filter(l=>q.legs.includes(l)).length < Math.min(c.legs.length, q.legs.length))) picked.push(c);
-    if(picked.length===3) break;
+    if(picked.length===R.max) break;
   }
   return picked;
 }
@@ -585,7 +586,7 @@ function sgCards(list, mode, offset){
       <button class="ghost" data-sg="${offset+i}">Load into slip</button>
     </div>`).join('') + `</div>`;
 }
-let sgAll = [];
+let sgAll = [], sgOpen = {};
 function renderSuggest(){
   $('sgMid').classList.toggle('on', sgMode!=='bomb'); $('sgBomb').classList.toggle('on', sgMode==='bomb');
   if(!rows.length) return;
@@ -596,12 +597,17 @@ function renderSuggest(){
   for(const g of groups){
     const list = buildSuggestions(g);
     html += `<div style="margin-top:12px"><strong style="font-size:13px">${SG_RULES[g].label}s</strong>`;
-    html += list.length ? sgCards(list, g, sgAll.length) : `<p class="muted" style="margin:6px 0 0">None on this board fits the rules for ${SG_RULES[g].label.toLowerCase()}s right now.</p>`;
+    const SHOW = 9, shown = sgOpen[g] ? list : list.slice(0, SHOW);
+    html += list.length ? `<span class="muted" style="font-size:12px"> · ${list.length} option${list.length>1?'s':''}, best edge first</span>` + sgCards(shown, g, sgAll.length)
+      + (list.length > SHOW ? `<button class="ghost" data-more="${g}" style="margin-top:8px">${sgOpen[g] ? 'Show fewer' : `Show all ${list.length}`}</button>` : '')
+      : `<p class="muted" style="margin:6px 0 0">None on this board fits the rules for ${SG_RULES[g].label.toLowerCase()}s right now.</p>`;
     html += `</div>`;
-    sgAll.push(...list);
+    sgAll.push(...shown);
   }
   $('suggest').innerHTML = html + `<p class="note" style="margin-top:10px">Prices are leg by leg. Hard Rock's same-game price is usually lower, so check the app and type the price you get before you click Bet it.</p>`;
-  $('suggest').onclick = e => { const b = e.target.closest('button[data-sg]'); if(!b) return; slip = sgAll[+b.dataset.sg].legs.slice(); renderSlip(); render(); };
+  $('suggest').onclick = e => {
+    const m = e.target.closest('button[data-more]'); if(m){ sgOpen[m.dataset.more] = !sgOpen[m.dataset.more]; renderSuggest(); return; }
+    const b = e.target.closest('button[data-sg]'); if(!b) return; slip = sgAll[+b.dataset.sg].legs.slice(); renderSlip(); render(); };
 }
 $('sgMid').onclick = () => { sgMode='mid'; renderSuggest(); };
 $('sgBomb').onclick = () => { sgMode='bomb'; renderSuggest(); };
