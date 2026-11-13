@@ -199,9 +199,9 @@ const HR = 'hardrockbet';
 const MARKETS = {
   player_pass_yds:'Pass Yds', player_pass_tds:'Pass TDs', player_pass_completions:'Completions', player_pass_attempts:'Pass Att',
   player_pass_interceptions:'INTs', player_rush_yds:'Rush Yds', player_rush_attempts:'Rush Att', player_receptions:'Receptions',
-  player_reception_yds:'Rec Yds', player_rush_reception_yds:'Rush+Rec Yds', player_anytime_td:'Anytime TD'
+  player_reception_yds:'Rec Yds', player_rush_reception_yds:'Rush+Rec Yds', player_anytime_td:'Anytime TD', h2h:'Moneyline', spreads:'Spread', totals:'Game total'
 };
-const DEFAULT_ON = ['player_pass_yds','player_rush_yds','player_receptions','player_reception_yds','player_pass_tds','player_anytime_td'];
+const DEFAULT_ON = ['h2h','spreads','totals','player_pass_yds','player_rush_yds','player_receptions','player_reception_yds','player_pass_tds','player_anytime_td'];
 
 // ---------- odds math ----------
 const toProb = a => a > 0 ? 100/(a+100) : -a/(-a+100);
@@ -228,6 +228,8 @@ const STAT_SD = {
   player_pass_completions: L => 4.5,
   player_pass_attempts: L => 5.5,
   player_rush_attempts: L => Math.max(2.5, 0.3*L),
+  spreads: L => 13.5,   // NFL final margin
+  totals: L => 10,      // NFL game total
 };
 function normCdf(x){ const t=1/(1+0.2316419*Math.abs(x)); const d=0.3989423*Math.exp(-x*x/2);
   const p=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274)))); return x>0?1-p:p; }
@@ -244,7 +246,37 @@ function normInv(p){ // Acklam approximation
 /** Core engine. event = Odds API event-odds response. Returns rows for Hard Rock prices with a market consensus.
  *  Over/unders: every other book's line counts, even if it differs from Hard Rock's — its fair probability is
  *  shifted to Hard Rock's line. That is how the tool catches Hard Rock lagging when the market moves. */
+// Game markets are reshaped into the over/under form the engine already handles:
+//   moneyline: home = "Over", away = "Under" at a fixed line of 0
+//   spread:    line = -(home spread), home covering = "Over" (margin above the line)
+//   total:     Over/Under as-is
+function normalizeGameMarkets(event){
+  const home = event.home_team;
+  for(const bk of event.bookmakers||[]){
+    for(const m of bk.markets||[]){
+      if(m.key==='h2h') m.outcomes = m.outcomes.filter(o=>o.name!=='Draw').map(o => ({name: o.name===home?'Over':'Under', description:'Game', price:o.price, point:0}));
+      else if(m.key==='spreads'){
+        const h = m.outcomes.find(o=>o.name===home); if(!h){ m.outcomes=[]; continue; }
+        m.outcomes = m.outcomes.map(o => ({name: o.name===home?'Over':'Under', description:'Game', price:o.price, point:-h.point}));
+      }
+      else if(m.key==='totals') m.outcomes = m.outcomes.map(o => ({...o, description:'Game'}));
+    }
+  }
+}
+const sgnPt = x => (x>0?'+':'') + x;
+function labelRow(r, event){
+  r.label = `${r.side}${r.point!=null?' '+r.point:''}`; r.mktText = r.mktLine;
+  if(r.market==='totals'){ r.player = 'Game total'; }
+  if(r.market==='h2h'){ r.player = r.side==='Over'?event.home_team:event.away_team; r.label = 'To win'; r.mktText = null; }
+  if(r.market==='spreads'){
+    const home = r.side==='Over';
+    r.player = home?event.home_team:event.away_team;
+    r.label = sgnPt(home ? -r.point : r.point);
+    if(r.mktLine!=null) r.mktText = sgnPt(home ? -r.mktLine : r.mktLine);
+  }
+}
 function analyze(event){
+  normalizeGameMarkets(event);
   // idx: market|player -> book -> point -> {Over, Under, Yes}
   const idx = {};
   for(const bk of event.bookmakers||[]){
@@ -300,6 +332,7 @@ function analyze(event){
       }
     }
   }
+  rows.forEach(r => labelRow(r, event));
   return rows;
 }
 
@@ -321,7 +354,7 @@ function verdict(r){
   return 'pass';
 }
 const pct = x => Math.round(x*10);
-const UNITS = {player_receptions:['catch','catches'], player_pass_completions:['completion','completions'], player_pass_attempts:['attempt','attempts'],
+const UNITS = {spreads:['point','points'], totals:['point','points'], player_receptions:['catch','catches'], player_pass_completions:['completion','completions'], player_pass_attempts:['attempt','attempts'],
   player_rush_attempts:['carry','carries'], player_pass_tds:['TD','TDs'], player_pass_interceptions:['INT','INTs']};
 const unitName = (m, n) => { const u = UNITS[m] || ['yard','yards']; return n===1 ? u[0] : u[1]; };
 function reasons(r){
@@ -333,9 +366,9 @@ function reasons(r){
     const forYou = r.side==='Over' ? r.gap > 0 : r.gap < 0;
     const amt = Math.abs(r.gap);
     out.push(forYou
-      ? `Other books have moved to ${r.mktLine}; Hard Rock is still at ${r.point}. You get ${amt} extra ${unitName(r.market, amt)} of cushion.`
-      : `Other books have moved to ${r.mktLine}, against this side. The market is leaning the other way.`);
-  } else {
+      ? `Other books have moved to ${r.mktText}; Hard Rock is still at ${r.market==='spreads' ? r.label : r.point}. You get ${amt} extra ${unitName(r.market, amt)} of cushion.`
+      : `Other books have moved to ${r.mktText}, against this side. The market is leaning the other way.`);
+  } else if(r.market!=='h2h'){
     out.push(`Hard Rock's line matches the market.`);
   }
   // 2. likelihood
@@ -456,8 +489,8 @@ function render(){
     return `<tr class="${r.tier==='pass'?'dim':''}" title="${r.why.replace(/"/g,'&quot;')}">
       <td><span class="v ${tc}">${tl}</span></td>
       <td>${r.player}${showWhy?`<span class="why">${r.why}</span>`:''}</td><td>${r.marketName}${est}</td>
-      <td>${r.side}${r.point!=null?' '+r.point:''}</td>
-      <td class="num">${r.mktLine==null?'—':(r.gap!==0?`<b class="${(r.side==='Over'?r.gap>0:r.gap<0)?'pos':''}">${r.mktLine}</b>`:r.mktLine)}</td>
+      <td>${r.label}</td>
+      <td class="num">${r.mktText==null?'—':(r.gap!==0?`<b class="${(r.side==='Over'?r.gap>0:r.gap<0)?'pos':''}">${r.mktText}</b>`:r.mktText)}</td>
       <td class="num">${fmtAm(r.hr)}</td><td class="num">${fmtAm(r.fair)}</td>
       <td class="num">${(r.fairP*100).toFixed(1)}%</td>
       <td class="num ev ${r.ev>0?'pos':'neg'}">${r.ev>0?'+':''}${r.ev.toFixed(1)}%${hot}</td>
@@ -473,7 +506,7 @@ function renderSlip(){
     $('slip').innerHTML = '<p class="muted">Add legs from the value board.</p>';
     ['pOdds','pFair','pProb','pEv','pWin'].forEach(i=>$(i).textContent='—'); $('slipNote').textContent=''; return;
   }
-  $('slip').innerHTML = slip.map((l,i)=>`<div class="slip-leg"><div><span class="v ${TIERS[l.tier][1]}">${TIERS[l.tier][0]}</span> ${l.player}<br><small>${l.marketName} ${l.side}${l.point!=null?' '+l.point:''} · ${fmtAm(l.hr)} · ${l.ev>0?'+':''}${l.ev.toFixed(1)}%</small></div><button class="x" data-r="${i}">✕</button></div>`).join('');
+  $('slip').innerHTML = slip.map((l,i)=>`<div class="slip-leg"><div><span class="v ${TIERS[l.tier][1]}">${TIERS[l.tier][0]}</span> ${l.player}<br><small>${l.marketName} ${l.label} · ${fmtAm(l.hr)} · ${l.ev>0?'+':''}${l.ev.toFixed(1)}%</small></div><button class="x" data-r="${i}">✕</button></div>`).join('');
   const p = parlay(slip);
   $('pOdds').textContent = fmtAm(p.am);
   $('pFair').textContent = fmtAm(p.fair);
@@ -581,7 +614,7 @@ function sgCards(list, mode, offset){
   const units = c => (mode==='bomb' || mode==='4') ? 0.5 : (c.ev >= 0 ? 1 : 0.5);
   return `<div class="sg">` + list.map((c,i) => `<div class="sg-card">
       <div class="hd"><span>${c.legs.length} legs</span><span>${fmtAm(c.am)}</span></div>
-      <ul>${c.legs.map(l=>`<li><span class="v ${TIERS[l.tier][1]}">${TIERS[l.tier][0]}</span> ${l.player} ${l.side}${l.point!=null?' '+l.point:''} <span class="muted">${l.marketName}</span></li>`).join('')}</ul>
+      <ul>${c.legs.map(l=>`<li><span class="v ${TIERS[l.tier][1]}">${TIERS[l.tier][0]}</span> ${l.player} ${l.label} <span class="muted">${l.marketName}</span></li>`).join('')}</ul>
       <div class="meta">Hits ~${(c.p*100).toFixed(0)}% · edge <b class="${c.ev>=0?'pos':''}">${c.ev>=0?'+':''}${c.ev.toFixed(1)}%</b> · stake ~$${(units(c)*unit()).toFixed(0)}</div>
       <button class="ghost" data-sg="${offset+i}">Load into slip</button>
     </div>`).join('') + `</div>`;
@@ -621,13 +654,13 @@ function logBet(){
   const am = got ?? p.am, dec = toDec(am);
   const ev = (p.p*dec - 1)*100;
   betLog.unshift({ id: Date.now(), ts: new Date().toISOString(), game: $('resultTitle').textContent,
-    legs: slip.map(l=>({player:l.player, market:l.marketName, side:l.side, point:l.point, hr:l.hr, tier:l.tier, ev:+l.ev.toFixed(1)})),
+    legs: slip.map(l=>({player:l.player, market:l.marketName, side:l.side, point:l.point, label:l.label, hr:l.hr, tier:l.tier, ev:+l.ev.toFixed(1)})),
     am, dec, stake, fairP: p.p, ev: +ev.toFixed(1), type: ticketType(slip, ev), status:'pending' });
   saveLog(); slip = []; $('gotPrice').value=''; renderSlip(); render(); renderBets();
   status(`Ticket logged at ${fmtAm(am)} for $${stake}. Mark it won or lost under Open bets when the game ends.`);
 }
 function card(b, compact){
-  const legs = b.legs.map(l=>`${l.player} ${l.side}${l.point!=null?' '+l.point:''} ${l.market}`).join(' · ');
+  const legs = b.legs.map(l=>`${l.player} ${l.label ?? (l.side+(l.point!=null?' '+l.point:''))} ${l.market}`).join(' · ');
   const d = new Date(b.ts);
   const res = b.status==='pending' ? '' : `<span class="${pnlOf(b)>=0?'pos':'neg-t'}" style="font-weight:700">${pnlOf(b)>=0?'+':''}${money(pnlOf(b))}</span>`;
   return `<div class="bet-card">
