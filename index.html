@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NFL Prop Edge — Hard Rock vs Market</title>
+<style>
+  :root{--bg:#0f1115;--panel:#171a21;--line:#262b36;--text:#e6e8ee;--muted:#8b93a7;--good:#2fbf71;--warn:#e0a526;--bad:#e5534b;--accent:#5b8cff}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text)}
+  header{padding:18px 24px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+  h1{font-size:18px;margin:0} h1 span{color:var(--muted);font-weight:400}
+  main{display:grid;grid-template-columns:1fr 320px;gap:20px;padding:20px 24px;max-width:1400px;margin:0 auto}
+  @media(max-width:1000px){main{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+  label{color:var(--muted);font-size:12px;display:block;margin-bottom:4px}
+  input,select,button{font:inherit;color:var(--text);background:#0f1218;border:1px solid var(--line);border-radius:7px;padding:8px 10px}
+  button{cursor:pointer;background:var(--accent);border-color:var(--accent);font-weight:600}
+  button.ghost{background:transparent;border-color:var(--line);font-weight:400}
+  button:disabled{opacity:.5;cursor:default}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .row>div{display:flex;flex-direction:column}
+  .markets{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .chip{display:flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:20px;padding:4px 10px;font-size:12px;cursor:pointer;user-select:none}
+  .chip input{margin:0}
+  .status{color:var(--muted);font-size:12px;margin-top:10px;min-height:18px}
+  .status.err{color:var(--bad)}
+  table{width:100%;border-collapse:collapse;margin-top:12px}
+  th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+  th{color:var(--muted);font-weight:500;font-size:12px;cursor:pointer}
+  td.num,th.num{text-align:right}
+  tr:hover td{background:#1c2029}
+  .ev{font-weight:700} .pos{color:var(--good)} .neg{color:var(--muted)}
+  .tag{font-size:11px;padding:1px 6px;border-radius:4px;border:1px solid var(--line);color:var(--muted)}
+  .add{padding:3px 9px;font-size:12px}
+  .slip-leg{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .slip-leg small{color:var(--muted)}
+  .x{background:none;border:none;color:var(--muted);padding:0 4px;cursor:pointer}
+  .big{font-size:22px;font-weight:700}
+  .muted{color:var(--muted)} .note{font-size:12px;color:var(--muted);line-height:1.5}
+  .kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+  .kpis div{background:#0f1218;border:1px solid var(--line);border-radius:8px;padding:10px}
+  .kpis label{margin:0}
+  .warn{color:var(--warn)}
+  .v{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:.3px}
+  .v-bet{background:#173d2a;color:#4be08f}.v-lean{background:#1d3324;color:#9ad9b0}.v-action{background:#3a3115;color:#f0c349}
+  .v-pass{background:#22262f;color:#7d8597}.v-check{background:#40261a;color:#ff9b5c}
+  .why{display:block;font-size:12px;color:var(--muted);white-space:normal;max-width:520px;margin-top:2px}
+  tr.dim td{opacity:.55}
+  .tabs{display:flex;gap:4px;padding:0 24px;border-bottom:1px solid var(--line)}
+  .tab{background:none;border:none;border-bottom:2px solid transparent;border-radius:0;padding:12px 14px;color:var(--muted);font-weight:600}
+  .tab.on{color:var(--text);border-bottom-color:var(--accent)}
+  .bet-card{border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:8px;font-size:13px}
+  .bet-card .top{display:flex;justify-content:space-between;gap:8px;font-weight:600}
+  .bet-card .legs{color:var(--muted);font-size:12px;margin:4px 0 8px}
+  .settle{display:flex;gap:6px}
+  .settle button{padding:4px 10px;font-size:12px}
+  .b-won{background:#1f6f45;border-color:#1f6f45}.b-lost{background:#7a2e2a;border-color:#7a2e2a}
+  .st{font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px}
+  .st-won{background:#173d2a;color:#4be08f}.st-lost{background:#3d1b19;color:#ff7b72}.st-push{background:#22262f;color:#aab}.st-pending{background:#1b2540;color:#8fb0ff}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .stats div{background:#0f1218;border:1px solid var(--line);border-radius:8px;padding:12px}
+  .neg-t{color:var(--bad)}
+  #betsView{padding:20px 24px;max-width:1400px;margin:0 auto}
+  textarea{width:100%;min-height:70px;background:#0f1218;color:var(--text);border:1px solid var(--line);border-radius:7px;font:12px monospace;padding:8px}
+  details summary{cursor:pointer;color:var(--muted);font-size:12px;margin-top:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>NFL Prop Edge <span>— Hard Rock vs. the market</span></h1>
+  <div class="row">
+    <div><label>The Odds API key</label><input id="key" type="password" placeholder="paste key" size="28"></div>
+    <button class="ghost" id="saveKey">Save</button>
+    <div><label>Starting bankroll ($)</label><input id="bank" type="number" value="1000" style="width:100px"></div>
+    <div><label>1 unit (2% of current)</label><div id="unitShow" style="padding:8px 0;font-weight:700">$20</div></div>
+    <button class="ghost" id="demo">Demo data</button>
+  </div>
+</header>
+<nav class="tabs"><button class="tab on" id="tabBoard">Board</button><button class="tab" id="tabBets">My bets <span id="openCount" class="muted"></span></button></nav>
+
+<main id="boardView">
+<section>
+  <div class="panel">
+    <div class="row">
+      <div style="flex:1;min-width:260px"><label>Game</label><select id="game"><option>Load games first</option></select></div>
+      <button class="ghost" id="loadGames">Load this week's games</button>
+      <div><label>Show</label><select id="minEv"><option value="2">Bet only</option><option value="0">Bet + Lean</option><option value="-3" selected>Bet + Lean + Action</option><option value="-100">Everything</option></select></div>
+      <div><label>Min Fair % (likelihood)</label><select id="minP"><option value="0" selected>Any</option><option value="30">30%+</option><option value="45">45%+</option><option value="50">50%+</option><option value="55">55%+</option><option value="60">60%+</option><option value="65">65%+</option></select></div>
+      <div><label>Max Fair %</label><select id="maxP"><option value="100" selected>Any</option><option value="45">45% or less</option><option value="35">35% or less</option><option value="25">25% or less</option></select></div>
+      <div><label>Anytime TD (estimated)</label><label class="chip" style="margin:0;padding:7px 10px"><input type="checkbox" id="showEst">Show</label></div>
+      <div><label>Min books in consensus</label><select id="minBooks"><option>2</option><option selected>3</option><option>4</option></select></div>
+      <button id="scan">Scan game</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="ghost" id="preSafe">Likely to hit (middle parlays)</button>
+      <button class="ghost" id="preBomb">Long shots (bomber)</button>
+      <button class="ghost" id="preAll">Reset filters</button>
+    </div>
+    <div class="markets" id="markets"></div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="panel" style="margin-top:16px">
+    <div class="row" style="justify-content:space-between">
+      <strong id="resultTitle">Value board</strong>
+      <span class="muted" id="resultMeta"></span>
+    </div>
+    <table>
+      <thead><tr>
+        <th data-s="tierRank">Verdict</th><th data-s="player">Player</th><th data-s="market">Prop</th><th>Side</th>
+        <th class="num" data-s="mktLine">Market line</th><th class="num" data-s="hr">Hard Rock</th><th class="num" data-s="fair">Fair odds</th>
+        <th class="num" data-s="fairP">Fair %</th><th class="num" data-s="ev">Edge</th>
+        <th class="num" data-s="n">Books</th><th class="num">Stake</th><th></th>
+      </tr></thead>
+      <tbody id="rows"><tr><td colspan="12" class="muted">Pick a game and hit Scan, or click "Demo data" to see how it works.</td></tr></tbody>
+    </table>
+  </div>
+</section>
+
+<aside>
+  <div class="panel">
+    <strong>Parlay slip</strong>
+    <div id="slip"><p class="muted">Add legs from the value board.</p></div>
+    <div class="kpis">
+      <div><label>Hard Rock price</label><div class="big" id="pOdds">—</div></div>
+      <div><label>Fair price</label><div class="big" id="pFair">—</div></div>
+      <div><label>True hit chance</label><div class="big" id="pProb">—</div></div>
+      <div><label>Parlay edge</label><div class="big" id="pEv">—</div></div>
+    </div>
+    <div class="row"><div><label>Stake ($)</label><input id="stake" type="number" value="10" style="width:90px"></div>
+      <div><label>Price you got in the app</label><input id="gotPrice" type="text" placeholder="e.g. +174" style="width:110px"></div>
+      <div><label>To win</label><div class="big" id="pWin" style="padding-top:4px">—</div></div></div>
+    <p class="note" id="slipNote"></p>
+    <p class="note">Hard Rock's own SGP price may differ from the leg-by-leg price shown here — always check the price in the app before placing.</p>
+    <div class="row" style="margin-top:6px"><button id="logBet">Bet it</button><button class="ghost" id="clearSlip">Clear slip</button></div>
+  </div>
+
+  <div class="panel" style="margin-top:16px">
+    <strong>Open bets</strong>
+    <div id="openBets"><p class="muted">Tickets you bet show up here until you mark them won or lost.</p></div>
+  </div>
+
+  <div class="panel" style="margin-top:16px">
+    <strong>How to read this</strong>
+    <p class="note"><b>Fair %</b> is the market's true probability: every other book's price with its margin stripped out, averaged. <b>Edge</b> is what you'd make per $100 over the long run at Hard Rock's price. 0% = break-even; anything positive means Hard Rock is paying more than the bet is worth.</p>
+    <p class="note"><b>Market line</b> is where the other books have the line. When it's in bold, the market has moved away from Hard Rock's line, and green bold means that gap favors your side. That gap is where Hard Rock value usually comes from. Edges above ~10% can mean injury news, so check before betting.</p>
+    <details><summary>API credit usage</summary>
+      <p class="note">Loading games is free. Each scan costs (markets selected × 2) credits. The free plan has 500/month — about 40 scans at 6 markets. <span id="credits"></span></p>
+    </details>
+  </div>
+</aside>
+</main>
+
+<section id="betsView" hidden>
+  <div class="panel">
+    <strong>Results</strong>
+    <div class="stats" style="margin-top:12px">
+      <div><label>Record (W–L–P)</label><div class="big" id="sRec">0–0–0</div></div>
+      <div><label>Profit</label><div class="big" id="sPnl">$0</div></div>
+      <div><label>ROI</label><div class="big" id="sRoi">—</div></div>
+      <div><label>Total staked</label><div class="big" id="sStaked">$0</div></div>
+      <div><label>Current bankroll</label><div class="big" id="sBank">—</div></div>
+      <div><label>Expected profit (from edge)</label><div class="big" id="sExp">$0</div></div>
+    </div>
+    <p class="note">Expected profit is what the edges on your tickets say you "should" have made. Over a few weeks, actual profit swings a lot around it. Over a season, they should track each other if the edges are real.</p>
+    <table style="margin-top:8px"><thead><tr><th>Ticket type</th><th class="num">Tickets</th><th class="num">W–L–P</th><th class="num">Staked</th><th class="num">Profit</th><th class="num">ROI</th></tr></thead><tbody id="byType"></tbody></table>
+  </div>
+  <div class="panel" style="margin-top:16px">
+    <div class="row" style="justify-content:space-between"><strong>All tickets</strong>
+      <div class="row"><select id="fStatus"><option value="all">All</option><option value="pending">Open</option><option value="won">Won</option><option value="lost">Lost</option><option value="push">Push</option></select></div></div>
+    <div id="history"></div>
+  </div>
+  <div class="panel" style="margin-top:16px">
+    <strong>Backup</strong>
+    <p class="note">Your bets are saved in this browser on this computer. Copy a backup now and then, and paste it back here to restore it (or to move it to another computer).</p>
+    <div class="row"><button class="ghost" id="copyLog">Copy backup</button><button class="ghost" id="restoreLog">Restore from pasted backup</button></div>
+    <textarea id="logBox" placeholder="Paste a backup here, then click Restore" style="margin-top:8px"></textarea>
+    <p class="note" id="backupMsg"></p>
+  </div>
+</section>
+
+<script>
+const API = 'https://api.the-odds-api.com/v4/sports/americanfootball_nfl';
+const HR = 'hardrockbet';
+const MARKETS = {
+  player_pass_yds:'Pass Yds', player_pass_tds:'Pass TDs', player_pass_completions:'Completions', player_pass_attempts:'Pass Att',
+  player_pass_interceptions:'INTs', player_rush_yds:'Rush Yds', player_rush_attempts:'Rush Att', player_receptions:'Receptions',
+  player_reception_yds:'Rec Yds', player_rush_reception_yds:'Rush+Rec Yds', player_anytime_td:'Anytime TD'
+};
+const DEFAULT_ON = ['player_pass_yds','player_rush_yds','player_receptions','player_reception_yds','player_pass_tds','player_anytime_td'];
+
+// ---------- odds math ----------
+const toProb = a => a > 0 ? 100/(a+100) : -a/(-a+100);
+const toDec  = a => a > 0 ? 1 + a/100 : 1 + 100/(-a);
+const probToAm = p => { if(p<=0||p>=1) return null; return p >= .5 ? Math.round(-100*p/(1-p)) : Math.round(100*(1-p)/p); };
+const decToAm = d => d >= 2 ? Math.round((d-1)*100) : Math.round(-100/(d-1));
+const fmtAm = a => a==null ? '—' : (a>0?'+':'')+a;
+const median = arr => { const s=[...arr].sort((a,b)=>a-b), m=s.length>>1; return s.length%2?s[m]:(s[m-1]+s[m])/2; };
+// Anytime TD is a one-sided (Yes-only) market, so margin can't be removed by pairing sides.
+// Use an assumed typical book margin on that market instead.
+// Books take a bigger cut on long shots, so the assumed margin grows as the price gets longer:
+// ~10% on favorites (50%+ implied) up to ~40% on deep long shots (10% implied).
+const oneSidedMargin = p => Math.min(1.40, Math.max(1.10, 1.10 + 0.30*(0.5 - p)/0.4));
+
+// Rough game-to-game spread (standard deviation) of each stat, used to translate another
+// book's line into a probability at Hard Rock's line when the two lines differ.
+// Markets not listed (TDs, INTs) are only compared on the exact same line.
+const STAT_SD = {
+  player_pass_yds: L => Math.max(40, 0.22*L),
+  player_rush_yds: L => Math.max(12, 0.45*L),
+  player_reception_yds: L => Math.max(12, 0.6*L),
+  player_rush_reception_yds: L => Math.max(15, 0.45*L),
+  player_receptions: L => Math.max(1.3, 0.4*L),
+  player_pass_completions: L => 4.5,
+  player_pass_attempts: L => 5.5,
+  player_rush_attempts: L => Math.max(2.5, 0.3*L),
+};
+function normCdf(x){ const t=1/(1+0.2316419*Math.abs(x)); const d=0.3989423*Math.exp(-x*x/2);
+  const p=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274)))); return x>0?1-p:p; }
+function normInv(p){ // Acklam approximation
+  const a=[-39.69683028665376,220.9460984245205,-275.9285104469687,138.3577518672690,-30.66479806614716,2.506628277459239],
+        b=[-54.47609879822406,161.5858368580409,-155.6989798598866,66.80131188771972,-13.28068155288572],
+        c=[-0.007784894002430293,-0.3223964580411365,-2.400758277161838,-2.549732539343734,4.374664141464968,2.938163982698783],
+        d=[0.007784695709041462,0.3224671290700398,2.445134137142996,3.754408661907416], pl=0.02425;
+  if(p<pl){const q=Math.sqrt(-2*Math.log(p));return(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);}
+  if(p>1-pl){const q=Math.sqrt(-2*Math.log(1-p));return-(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);}
+  const q=p-.5,r=q*q;return(((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q/(((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+}
+
+/** Core engine. event = Odds API event-odds response. Returns rows for Hard Rock prices with a market consensus.
+ *  Over/unders: every other book's line counts, even if it differs from Hard Rock's — its fair probability is
+ *  shifted to Hard Rock's line. That is how the tool catches Hard Rock lagging when the market moves. */
+function analyze(event){
+  // idx: market|player -> book -> point -> {Over, Under, Yes}
+  const idx = {};
+  for(const bk of event.bookmakers||[]){
+    for(const m of bk.markets||[]){
+      for(const o of m.outcomes||[]){
+        const k = `${m.key}|${o.description||''}`;
+        const pt = o.point ?? '';
+        ((((idx[k] ||= {})[bk.key] ||= {})[pt]) ||= {})[o.name] = o.price;
+      }
+    }
+  }
+  const rows = [];
+  for(const [k, books] of Object.entries(idx)){
+    const hrBook = books[HR]; if(!hrBook) continue;
+    const [market, player] = k.split('|');
+    const sdFn = STAT_SD[market];
+    for(const [ptStr, hr] of Object.entries(hrBook)){
+      const L = ptStr==='' ? null : +ptStr;
+      for(const side of Object.keys(hr)){
+        const ou = side==='Over'||side==='Under';
+        const fairs = [], lines = [];
+        for(const [bkey, pts] of Object.entries(books)){
+          if(bkey === HR) continue;
+          if(!ou){ const b = pts[ptStr]; if(b && b[side]!=null){ const ip=toProb(b[side]); fairs.push(ip/oneSidedMargin(ip)); } continue; }
+          // pick this book's line closest to Hard Rock's that has both sides
+          let best = null;
+          for(const [bp, b] of Object.entries(pts)){
+            if(bp==='' || b.Over==null || b.Under==null) continue;
+            const d = Math.abs(+bp - L);
+            if(!best || d < best.d) best = {d, line:+bp, b};
+          }
+          if(!best) continue;
+          const po = toProb(best.b.Over), pu = toProb(best.b.Under);
+          let pOver = po/(po+pu);
+          if(best.d > 0){
+            if(!sdFn) continue;                       // discrete stat: exact line only
+            const sd = sdFn(best.line);
+            if(best.d > 1.5*sd) continue;             // too far apart to trust
+            const mu = best.line + sd*normInv(pOver);
+            pOver = 1 - normCdf((L - mu)/sd);
+          }
+          fairs.push(side==='Over' ? pOver : 1-pOver);
+          lines.push(best.line);
+        }
+        if(!fairs.length) continue;
+        const fairP = fairs.reduce((a,c)=>a+c,0)/fairs.length;
+        const hrPrice = hr[side];
+        const mktLine = lines.length ? median(lines) : null;
+        rows.push({ market, marketName: MARKETS[market]||market, player, point: L,
+                    side, hr: hrPrice, fairP, fair: probToAm(fairP), ev: (fairP*toDec(hrPrice)-1)*100, n: fairs.length,
+                    oneSided: !ou, mktLine, gap: mktLine!=null ? mktLine - L : 0,
+                    spread: fairs.length>1 ? Math.max(...fairs)-Math.min(...fairs) : 0 });
+      }
+    }
+  }
+  return rows;
+}
+
+/** Parlay math assuming independent legs. */
+function parlay(legs){
+  const dec = legs.reduce((a,l)=>a*toDec(l.hr),1);
+  const p = legs.reduce((a,l)=>a*l.fairP,1);
+  return { dec, am: decToAm(dec), p, fair: probToAm(p), ev: (p*dec-1)*100 };
+}
+
+// ---------- verdicts ----------
+const TIERS = { bet:['Bet','v-bet',4], lean:['Lean','v-lean',3], action:['Action','v-action',2], check:['Check news','v-check',1], pass:['Pass','v-pass',0] };
+function verdict(r){
+  if(r.oneSided) return r.ev >= 5 && r.ev <= 12 && r.n >= 3 ? 'lean' : (r.ev > 12 ? 'check' : 'pass');
+  if(r.ev > 12) return 'check';
+  if(r.ev >= 2 && r.n >= 3 && r.spread <= .08) return 'bet';
+  if(r.ev >= 0) return 'lean';
+  if(r.ev >= -3) return 'action';
+  return 'pass';
+}
+const pct = x => Math.round(x*10);
+const UNITS = {player_receptions:['catch','catches'], player_pass_completions:['completion','completions'], player_pass_attempts:['attempt','attempts'],
+  player_rush_attempts:['carry','carries'], player_pass_tds:['TD','TDs'], player_pass_interceptions:['INT','INTs']};
+const unitName = (m, n) => { const u = UNITS[m] || ['yard','yards']; return n===1 ? u[0] : u[1]; };
+function reasons(r){
+  const out = [];
+  // 1. the line
+  if(r.oneSided){
+    out.push(`Yes-only market, so the fair price is an estimate.`);
+  } else if(r.mktLine != null && r.gap !== 0){
+    const forYou = r.side==='Over' ? r.gap > 0 : r.gap < 0;
+    const amt = Math.abs(r.gap);
+    out.push(forYou
+      ? `Other books have moved to ${r.mktLine}; Hard Rock is still at ${r.point}. You get ${amt} extra ${unitName(r.market, amt)} of cushion.`
+      : `Other books have moved to ${r.mktLine}, against this side. The market is leaning the other way.`);
+  } else {
+    out.push(`Hard Rock's line matches the market.`);
+  }
+  // 2. likelihood
+  out.push(`Hits about ${pct(r.fairP)} in 10.`);
+  // 3. price
+  out.push(r.ev >= 0
+    ? `Hard Rock pays ${fmtAm(r.hr)}; fair is ${fmtAm(r.fair)}, so you're being overpaid.`
+    : r.ev >= -3 ? `Priced close to fair (${fmtAm(r.hr)} vs ${fmtAm(r.fair)}): small cost, fine for action.`
+    : `Hard Rock pays ${fmtAm(r.hr)}; fair is ${fmtAm(r.fair)}, so you're overpaying.`);
+  // 4. confidence
+  if(r.spread > .08) out.push(`Books disagree, so it's less certain.`);
+  else if(r.n >= 5) out.push(`${r.n} books agree.`);
+  else if(r.n < 3) out.push(`Only ${r.n} book${r.n>1?'s':''} to compare, so it's thin.`);
+  if(r.ev > 12) out.push(`Too good to be true usually means injury news. Check before betting.`);
+  return out.join(' ');
+}
+
+// ---------- staking ----------
+// 1 unit = 2% of bankroll. Size by verdict; never more than 5% of bankroll on one ticket.
+const UNITS_BY_TIER = { bet:2, lean:1, action:0.5, check:0, pass:0 };
+const curBank = () => (+document.getElementById('bank').value||0) + (typeof settledPnl==='function' ? settledPnl() : 0);
+const unit = () => Math.max(0, curBank() * 0.02);
+const stakeFor = tier => Math.min(UNITS_BY_TIER[tier]*unit(), unit()*2.5);
+
+// ---------- bet log ----------
+let betLog = [];
+try { betLog = JSON.parse(localStorage.getItem('betLog')||'[]'); } catch(e) { betLog = []; }
+const saveLog = () => { try{ localStorage.setItem('betLog', JSON.stringify(betLog)); }catch(e){} };
+const parseAm = t => { const n = parseFloat(String(t).replace(/[^0-9.+-]/g,'')); return isFinite(n) && Math.abs(n) >= 100 ? n : null; };
+const pnlOf = b => b.status==='won' ? b.stake*(b.dec-1) : b.status==='lost' ? -b.stake : 0;
+function settledPnl(){ return betLog.filter(b=>b.status!=='pending').reduce((a,b)=>a+pnlOf(b),0); }
+const money = x => (x<0?'−$':'$')+Math.abs(x).toFixed(2);
+function ticketType(legs, ev){
+  if(legs.length===1) return 'Single';
+  if(ev >= 0) return 'Value parlay';
+  return legs.some(l=>l.tier==='bet'||l.tier==='lean') ? 'Action parlay' : 'Pure action';
+}
+
+// ---------- UI ----------
+const $ = id => document.getElementById(id);
+let rows = [], slip = [], sortKey = 'ev', sortDir = -1, eventsCache = [];  // edge order also groups verdicts
+
+function store(k,v){ try{ v==null?localStorage.removeItem(k):localStorage.setItem(k,v) }catch(e){} }
+function load(k){ try{ return localStorage.getItem(k) }catch(e){ return null } }
+
+function initMarkets(){
+  const saved = (load('markets')||'').split(',').filter(Boolean);
+  const on = saved.length ? saved : DEFAULT_ON;
+  $('markets').innerHTML = Object.entries(MARKETS).map(([k,n]) =>
+    `<label class="chip"><input type="checkbox" value="${k}" ${on.includes(k)?'checked':''}>${n}</label>`).join('');
+  $('markets').addEventListener('change', ()=> store('markets', selectedMarkets().join(',')));
+}
+const selectedMarkets = () => [...$('markets').querySelectorAll('input:checked')].map(i=>i.value);
+function status(msg, err){ $('status').textContent = msg; $('status').className = 'status'+(err?' err':''); }
+
+async function get(url){
+  const r = await fetch(url);
+  const left = r.headers.get('x-requests-remaining');
+  if(left) $('credits').textContent = `Credits left this month: ${left}.`;
+  if(!r.ok){ let t=''; try{ t=(await r.json()).message }catch(e){}; throw new Error(`${r.status} ${t||r.statusText}`); }
+  return r.json();
+}
+
+async function loadGames(){
+  const key = $('key').value.trim(); if(!key) return status('Paste your Odds API key first.', true);
+  status('Loading games…');
+  try{
+    const evs = await get(`${API}/events?apiKey=${encodeURIComponent(key)}`);
+    const now = Date.now(), week = now + 8*864e5;
+    eventsCache = evs.filter(e => { const t = Date.parse(e.commence_time); return t > now - 4*3600e3 && t < week; });
+    $('game').innerHTML = eventsCache.map(e => {
+      const d = new Date(e.commence_time);
+      return `<option value="${e.id}">${e.away_team} @ ${e.home_team} — ${d.toLocaleDateString(undefined,{weekday:'short'})} ${d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}</option>`;
+    }).join('') || '<option>No games in the next 8 days</option>';
+    status(`${eventsCache.length} games loaded.`);
+  }catch(e){ status('Could not load games: '+e.message, true); }
+}
+
+async function scan(){
+  const key = $('key').value.trim(); if(!key) return status('Paste your Odds API key first.', true);
+  const id = $('game').value, mk = selectedMarkets();
+  if(!eventsCache.find(e=>e.id===id)) return status('Load games and pick one first.', true);
+  if(!mk.length) return status('Pick at least one prop type.', true);
+  status(`Scanning ${mk.length} prop types (~${mk.length*2} credits)…`); $('scan').disabled = true;
+  try{
+    const ev = await get(`${API}/events/${id}/odds?apiKey=${encodeURIComponent(key)}&regions=us,us2&markets=${mk.join(',')}&oddsFormat=american`);
+    const books = (ev.bookmakers||[]).map(b=>b.key);
+    if(!books.includes(HR)) status(`Hard Rock hasn't posted props for this game yet (books found: ${books.length}). Try closer to kickoff.`, true);
+    else status(`Compared Hard Rock against ${books.length-1} other books. Updated ${new Date().toLocaleTimeString()}.`);
+    show(ev);
+  }catch(e){ status('Scan failed: '+e.message, true); }
+  $('scan').disabled = false;
+}
+
+function show(ev){
+  rows = analyze(ev); rows.forEach(r => { r.tier = verdict(r); r.tierRank = TIERS[r.tier][2]; r.why = reasons(r); });
+  $('resultTitle').textContent = `${ev.away_team} @ ${ev.home_team}`;
+  render();
+}
+
+function render(){
+  const minEv = +$('minEv').value, minN = +$('minBooks').value;
+  const minP = +$('minP').value/100, maxP = +$('maxP').value/100;
+  const list = rows.filter(r => r.ev >= minEv && r.n >= minN && r.fairP >= minP && r.fairP <= maxP && ($('showEst').checked || !r.oneSided))
+    .sort((a,b)=> { const x=a[sortKey], y=b[sortKey]; return (x>y?1:x<y?-1:0)*sortDir; });
+  const pos = rows.filter(r=>r.ev>0 && r.n>=minN && ($('showEst').checked || !r.oneSided)).length;
+  const vis = rows.filter(r=>$('showEst').checked || !r.oneSided);
+  const cnt = t => vis.filter(r=>r.tier===t && r.n>=minN).length;
+  $('resultMeta').textContent = `${cnt('bet')} Bet · ${cnt('lean')} Lean · ${cnt('action')} Action · out of ${rows.length} Hard Rock prices`;
+  $('rows').innerHTML = list.length ? list.map((r,i) => {
+    const hot = r.ev > 10 ? ' <span class="tag warn" title="Unusually large — check injury news / stale line">verify</span>' : '';
+    const disagree = r.spread > .08 ? ' <span class="tag" title="Books disagree a lot on this one">split</span>' : '';
+    const est = r.oneSided ? ' <span class="tag" title="Yes-only market; fair price is estimated">est.</span>' : '';
+    const id = rows.indexOf(r);
+    const inSlip = slip.includes(r);
+    const [tl, tc] = TIERS[r.tier];
+    const showWhy = r.tier !== 'pass';
+    return `<tr class="${r.tier==='pass'?'dim':''}" title="${r.why.replace(/"/g,'&quot;')}">
+      <td><span class="v ${tc}">${tl}</span></td>
+      <td>${r.player}${showWhy?`<span class="why">${r.why}</span>`:''}</td><td>${r.marketName}${est}</td>
+      <td>${r.side}${r.point!=null?' '+r.point:''}</td>
+      <td class="num">${r.mktLine==null?'—':(r.gap!==0?`<b class="${(r.side==='Over'?r.gap>0:r.gap<0)?'pos':''}">${r.mktLine}</b>`:r.mktLine)}</td>
+      <td class="num">${fmtAm(r.hr)}</td><td class="num">${fmtAm(r.fair)}</td>
+      <td class="num">${(r.fairP*100).toFixed(1)}%</td>
+      <td class="num ev ${r.ev>0?'pos':'neg'}">${r.ev>0?'+':''}${r.ev.toFixed(1)}%${hot}</td>
+      <td class="num">${r.n}${disagree}</td>
+      <td class="num">${stakeFor(r.tier) ? '$'+stakeFor(r.tier).toFixed(0) : '—'}</td>
+      <td><button class="add ${inSlip?'ghost':''}" data-i="${id}" ${inSlip?'disabled':''}>${inSlip?'Added':'+ Slip'}</button></td></tr>`;
+  }).join('') : `<tr><td colspan="12" class="muted">Nothing worth betting on this game right now. Set Show to "Everything" to see the full board, or rescan closer to kickoff.</td></tr>`;
+}
+
+function renderSlip(){
+  if(!slip.length){
+    $('slip').innerHTML = '<p class="muted">Add legs from the value board.</p>';
+    ['pOdds','pFair','pProb','pEv','pWin'].forEach(i=>$(i).textContent='—'); $('slipNote').textContent=''; return;
+  }
+  $('slip').innerHTML = slip.map((l,i)=>`<div class="slip-leg"><div><span class="v ${TIERS[l.tier][1]}">${TIERS[l.tier][0]}</span> ${l.player}<br><small>${l.marketName} ${l.side}${l.point!=null?' '+l.point:''} · ${fmtAm(l.hr)} · ${l.ev>0?'+':''}${l.ev.toFixed(1)}%</small></div><button class="x" data-r="${i}">✕</button></div>`).join('');
+  const p = parlay(slip);
+  $('pOdds').textContent = fmtAm(p.am);
+  $('pFair').textContent = fmtAm(p.fair);
+  $('pProb').textContent = (p.p*100).toFixed(1)+'%';
+  $('pEv').textContent = (p.ev>0?'+':'')+p.ev.toFixed(1)+'%';
+  $('pEv').className = 'big '+(p.ev>0?'pos':'');
+  $('pWin').textContent = '$'+((+$('stake').value||0)*(p.dec-1)).toFixed(2);
+  const sameGameDup = new Set(slip.map(l=>l.player)).size < slip.length;
+  const nb = slip.filter(l=>l.tier==='bet'||l.tier==='lean').length, na = slip.filter(l=>l.tier==='action').length, np = slip.filter(l=>l.tier==='pass'||l.tier==='check').length;
+  const read = np ? `<span class="warn">This slip has a Pass leg, so you're overpaying for it. Swap it out.</span> `
+    : p.ev >= 0 ? `<b class="pos">Makes sense:</b> built on value, and the whole parlay pays more than it should. `
+    : nb ? `<b>Reasonable action bet:</b> anchored by ${nb} value leg${nb>1?'s':''}, with ${na} near-fair leg${na>1?'s':''} for upside. Costs about ${Math.abs(p.ev).toFixed(0)}% on average, versus ~15–20% for a random 3-leg parlay. `
+    : `<b>Pure action:</b> no value legs. Keep the stake small. `;
+  const slipUnits = np ? 0 : p.ev >= 0 ? (slip.length===1 ? UNITS_BY_TIER[slip[0].tier] : 1) : nb ? 0.5 : 0.25;
+  const sugg = slipUnits*unit();
+  $('stake').value = sugg ? sugg.toFixed(0) : 0;
+  $('pWin').textContent = '$'+((+$('stake').value||0)*(p.dec-1)).toFixed(2);
+  $('slipNote').innerHTML = (sugg ? `<b>Suggested stake: $${sugg.toFixed(0)}</b> (${slipUnits} unit${slipUnits===1?'':'s'}). ` : '<b>Suggested stake: $0.</b> ') + read + (slip.some(l=>l.ev<=0) && !np ? '' : '')
+    + (sameGameDup ? '<span class="warn">Two legs on the same player are linked — the math here treats them as independent.</span>' : '');
+}
+
+$('rows').addEventListener('click', e => {
+  const b = e.target.closest('button[data-i]'); if(!b) return;
+  const r = rows[+b.dataset.i]; if(!slip.includes(r)) slip.push(r); renderSlip(); render();
+});
+$('slip').addEventListener('click', e => { const b=e.target.closest('button[data-r]'); if(!b) return; slip.splice(+b.dataset.r,1); renderSlip(); render(); });
+document.querySelectorAll('th[data-s]').forEach(th => th.addEventListener('click', () => {
+  const k = th.dataset.s; sortDir = sortKey===k ? -sortDir : -1; sortKey = k; render();
+}));
+$('minEv').onchange = render; $('minBooks').onchange = render; $('minP').onchange = render; $('maxP').onchange = render; $('showEst').onchange = render;
+$('stake').oninput = () => { const p = parlay(slip); if(slip.length) $('pWin').textContent = '$'+((+$('stake').value||0)*(p.dec-1)).toFixed(2); };
+const updUnit = () => { store('bank', $('bank').value); renderBets(); if(rows.length) render(); renderSlip(); };
+$('bank').oninput = updUnit;
+const preset = (minP, maxP, minEv) => { $('minP').value=minP; $('maxP').value=maxP; $('minEv').value=minEv; render(); };
+$('preSafe').onclick = () => preset('50','100','-3');
+$('preBomb').onclick = () => preset('0','45','-3');
+$('preAll').onclick  = () => preset('0','100','-3');
+$('clearSlip').onclick = () => { slip=[]; renderSlip(); render(); };
+$('saveKey').onclick = () => { store('oddsKey', $('key').value.trim()); status('Key saved on this computer.'); };
+$('loadGames').onclick = loadGames;
+$('scan').onclick = scan;
+$('demo').onclick = () => { slip=[]; renderSlip(); show(demoEvent()); status('Demo data — made-up prices to show how the board works. Not real odds.'); };
+
+// ---------- demo ----------
+function demoEvent(){
+  const mk = (key, title, markets) => ({ key, title, markets });
+  const ou = (mkey, player, point, books) => books.map(([bk, o, u]) => ({bk, mkey, out:[{name:'Over',description:player,price:o,point},{name:'Under',description:player,price:u,point}]}));
+  const lines = [
+    ...ou('player_pass_yds','Tua Tagovailoa',244.5,[[HR,-102,-118],['draftkings',-125,-105],['fanduel',-128,-102],['betmgm',-120,-110],['williamhill_us',-125,-105]]),
+    ...ou('player_reception_yds','Tyreek Hill',72.5,[[HR,-105,-125],['draftkings',-112,-118],['fanduel',-110,-120],['betmgm',-115,-115],['espnbet',-110,-120]]),
+    ...ou('player_rush_yds','De\'Von Achane',61.5,[[HR,-115,-115],['draftkings',-110,-120],['fanduel',-114,-114],['betmgm',-115,-115]]),
+    ...ou('player_receptions','Jaylen Waddle',4.5,[[HR,+105,-135],['draftkings',-120,-110],['fanduel',-125,-105],['betmgm',-118,-112],['williamhill_us',-122,-108]]),
+    ...ou('player_pass_tds','Josh Allen',1.5,[[HR,-150,+120],['draftkings',-170,+135],['fanduel',-165,+130],['betmgm',-160,+125]]),
+    ...ou('player_rush_yds','James Cook',68.5,[[HR,-120,-110],['draftkings',-110,-120],['fanduel',-105,-125],['betmgm',-110,-120]]),
+    ...ou('player_reception_yds','Khalil Shakir',48.5,[[HR,-110,-120],['draftkings',-115,-115],['fanduel',-118,-112]]),
+  ];
+  const td = [['James Cook',[HR,+125],[['draftkings',-120],['fanduel',-115],['betmgm',-110]]],['Tyreek Hill',[HR,+150],[['draftkings',+140],['fanduel',+145],['betmgm',+135]]]];
+  const byBook = {};
+  for(const l of lines){ ((byBook[l.bk] ||= {})[l.mkey] ||= []).push(...l.out); }
+  for(const [p,[hk,hp],others] of td){
+    ((byBook[hk] ||= {}).player_anytime_td ||= []).push({name:'Yes',description:p,price:hp});
+    for(const [b,pr] of others) ((byBook[b] ||= {}).player_anytime_td ||= []).push({name:'Yes',description:p,price:pr});
+  }
+  return { home_team:'Miami Dolphins', away_team:'Buffalo Bills',
+    bookmakers: Object.entries(byBook).map(([k,ms]) => mk(k,k,Object.entries(ms).map(([key,outcomes])=>({key,outcomes})))) };
+}
+
+// ---------- bet log UI ----------
+function logBet(){
+  if(!slip.length) return status('Add legs to the slip first.', true);
+  const stake = +$('stake').value; if(!(stake>0)) return status('Enter a stake above $0.', true);
+  const p = parlay(slip);
+  const got = parseAm($('gotPrice').value);
+  const am = got ?? p.am, dec = toDec(am);
+  const ev = (p.p*dec - 1)*100;
+  betLog.unshift({ id: Date.now(), ts: new Date().toISOString(), game: $('resultTitle').textContent,
+    legs: slip.map(l=>({player:l.player, market:l.marketName, side:l.side, point:l.point, hr:l.hr, tier:l.tier, ev:+l.ev.toFixed(1)})),
+    am, dec, stake, fairP: p.p, ev: +ev.toFixed(1), type: ticketType(slip, ev), status:'pending' });
+  saveLog(); slip = []; $('gotPrice').value=''; renderSlip(); render(); renderBets();
+  status(`Ticket logged at ${fmtAm(am)} for $${stake}. Mark it won or lost under Open bets when the game ends.`);
+}
+function card(b, compact){
+  const legs = b.legs.map(l=>`${l.player} ${l.side}${l.point!=null?' '+l.point:''} ${l.market}`).join(' · ');
+  const d = new Date(b.ts);
+  const res = b.status==='pending' ? '' : `<span class="${pnlOf(b)>=0?'pos':'neg-t'}" style="font-weight:700">${pnlOf(b)>=0?'+':''}${money(pnlOf(b))}</span>`;
+  return `<div class="bet-card">
+    <div class="top"><span>${b.legs.length>1?b.legs.length+'-leg ':''}${b.type} · ${fmtAm(b.am)} · $${b.stake}</span><span class="st st-${b.status}">${b.status==='pending'?'Open':b.status[0].toUpperCase()+b.status.slice(1)}</span></div>
+    <div class="legs">${legs}<br>${b.game ? b.game+' · ' : ''}${d.toLocaleDateString()} · edge ${b.ev>0?'+':''}${b.ev}% · hit chance ${(b.fairP*100).toFixed(0)}% ${res}</div>
+    <div class="settle">${b.status==='pending'
+      ? `<button class="b-won" data-set="won" data-id="${b.id}">Won</button><button class="b-lost" data-set="lost" data-id="${b.id}">Lost</button><button class="ghost" data-set="push" data-id="${b.id}">Push</button>`
+      : `<button class="ghost" data-set="pending" data-id="${b.id}">Undo</button>`}
+      ${compact?'':`<button class="ghost" data-del="${b.id}">Delete</button>`}</div>
+  </div>`;
+}
+function renderBets(){
+  const open = betLog.filter(b=>b.status==='pending');
+  $('openCount').textContent = open.length ? `(${open.length} open)` : '';
+  $('openBets').innerHTML = open.length ? open.map(b=>card(b,true)).join('') : '<p class="muted">Tickets you bet show up here until you mark them won or lost.</p>';
+  const done = betLog.filter(b=>b.status!=='pending');
+  const w = done.filter(b=>b.status==='won').length, l = done.filter(b=>b.status==='lost').length, pu = done.filter(b=>b.status==='push').length;
+  const staked = done.reduce((a,b)=>a+b.stake,0), pnl = settledPnl(), exp = done.reduce((a,b)=>a+b.stake*b.ev/100,0);
+  $('sRec').textContent = `${w}–${l}–${pu}`;
+  $('sPnl').textContent = money(pnl); $('sPnl').className = 'big '+(pnl>0?'pos':pnl<0?'neg-t':'');
+  $('sRoi').textContent = staked ? ((pnl>=0?'+':'')+(pnl/staked*100).toFixed(1)+'%') : '—';
+  $('sStaked').textContent = money(staked);
+  $('sBank').textContent = money(curBank());
+  $('sExp').textContent = money(exp);
+  const types = ['Value parlay','Action parlay','Pure action','Single'];
+  $('byType').innerHTML = types.map(t => {
+    const ts = done.filter(b=>b.type===t); if(!ts.length && !betLog.some(b=>b.type===t)) return '';
+    const st = ts.reduce((a,b)=>a+b.stake,0), pl = ts.reduce((a,b)=>a+pnlOf(b),0);
+    const c = s => ts.filter(b=>b.status===s).length;
+    return `<tr><td>${t}</td><td class="num">${betLog.filter(b=>b.type===t).length}</td><td class="num">${c('won')}–${c('lost')}–${c('push')}</td><td class="num">${money(st)}</td><td class="num ${pl>0?'pos':pl<0?'neg-t':''}">${money(pl)}</td><td class="num">${st?((pl>=0?'+':'')+(pl/st*100).toFixed(1)+'%'):'—'}</td></tr>`;
+  }).join('') || '<tr><td colspan="6" class="muted">No settled tickets yet.</td></tr>';
+  const f = $('fStatus').value;
+  const hist = betLog.filter(b=> f==='all' || b.status===f);
+  $('history').innerHTML = hist.length ? hist.map(b=>card(b,false)).join('') : '<p class="muted">Nothing here yet.</p>';
+  $('unitShow').textContent = '$'+unit().toFixed(0);
+}
+function onSettle(e){
+  const s = e.target.closest('button[data-set]'), d = e.target.closest('button[data-del]');
+  if(s){ const b = betLog.find(x=>x.id==s.dataset.id); if(b){ b.status = s.dataset.set; saveLog(); renderBets(); render(); } }
+  if(d){ if(d.dataset.confirm){ betLog = betLog.filter(x=>x.id!=d.dataset.del); saveLog(); renderBets(); } else { d.dataset.confirm='1'; d.textContent='Click again to delete'; } }
+}
+$('openBets').addEventListener('click', onSettle);
+$('history').addEventListener('click', onSettle);
+$('fStatus').onchange = renderBets;
+$('logBet').onclick = logBet;
+const showTab = b => { $('boardView').hidden = !b; $('betsView').hidden = b; $('tabBoard').classList.toggle('on', b); $('tabBets').classList.toggle('on', !b); if(!b) renderBets(); };
+$('tabBoard').onclick = () => showTab(true);
+$('tabBets').onclick = () => showTab(false);
+$('copyLog').onclick = async () => { const t = JSON.stringify(betLog); $('logBox').value = t;
+  try{ await navigator.clipboard.writeText(t); $('backupMsg').textContent = 'Backup copied. Paste it into a note or email to yourself.'; }
+  catch(e){ $('backupMsg').textContent = 'Copy the text in the box above and save it somewhere.'; } };
+$('restoreLog').onclick = () => { try{ const d = JSON.parse($('logBox').value); if(!Array.isArray(d)) throw 0; betLog = d; saveLog(); renderBets(); $('backupMsg').textContent = `Restored ${d.length} tickets.`; }
+  catch(e){ $('backupMsg').textContent = 'That doesn\'t look like a backup from this tool.'; } };
+
+// boot
+initMarkets();
+const savedBank = load('bank'); if(savedBank) $('bank').value = savedBank; renderBets();
+const savedKey = load('oddsKey'); if(savedKey) $('key').value = savedKey;
+if(typeof module !== 'undefined') module.exports = { analyze, parlay, demoEvent, toProb, probToAm };
+</script>
+</body>
+</html>
