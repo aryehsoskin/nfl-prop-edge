@@ -96,6 +96,7 @@
       <div><label>Anytime TD (estimated)</label><label class="chip" style="margin:0;padding:7px 10px"><input type="checkbox" id="showEst">Show</label></div>
       <div><label>Min books in consensus</label><select id="minBooks"><option>2</option><option selected>3</option><option>4</option></select></div>
       <button id="scan">Scan game</button>
+      <button class="ghost" id="scanSlate" title="Every game's moneyline in one scan, about 2 credits">Moneyline slate (all games)</button>
     </div>
     <div class="row" style="margin-top:10px">
       <button class="ghost" id="preSafe">Likely to hit (middle parlays)</button>
@@ -267,7 +268,7 @@ const sgnPt = x => (x>0?'+':'') + x;
 function labelRow(r, event){
   r.label = `${r.side}${r.point!=null?' '+r.point:''}`; r.mktText = r.mktLine;
   if(r.market==='totals'){ r.player = 'Game total'; }
-  if(r.market==='h2h'){ r.player = r.side==='Over'?event.home_team:event.away_team; r.label = 'To win'; r.mktText = null; }
+  if(r.market==='h2h'){ r.player = r.side==='Over'?event.home_team:event.away_team; r.label = `beats ${r.side==='Over'?event.away_team:event.home_team}`; r.mktText = null; }
   if(r.market==='spreads'){
     const home = r.side==='Over';
     r.player = home?event.home_team:event.away_team;
@@ -409,6 +410,7 @@ function ticketType(legs, ev){
 
 // ---------- UI ----------
 const $ = id => document.getElementById(id);
+let slateMode = false;
 let rows = [], slip = [], sortKey = 'ev', sortDir = -1, eventsCache = [];  // edge order also groups verdicts
 
 function store(k,v){ try{ v==null?localStorage.removeItem(k):localStorage.setItem(k,v) }catch(e){} }
@@ -464,9 +466,37 @@ async function scan(){
 }
 
 function show(ev){
-  rows = analyze(ev); rows.forEach(r => { r.tier = verdict(r); r.tierRank = TIERS[r.tier][2]; r.why = reasons(r); });
+  slateMode = false; slip = []; renderSlip();
+  rows = analyze(ev); rows.forEach(r => { r.tier = verdict(r); r.tierRank = TIERS[r.tier][2]; r.why = reasons(r); r.gameId = ev.id; });
   $('resultTitle').textContent = `${ev.away_team} @ ${ev.home_team}`;
   render();
+}
+
+// Moneyline slate: every upcoming game's moneyline in one call (1 market x 2 regions = 2 credits).
+async function scanSlate(){
+  const key = $('key').value.trim(); if(!key) return status('Paste your Odds API key first.', true);
+  status('Scanning every game\'s moneyline (~2 credits)…'); $('scanSlate').disabled = true;
+  try{
+    const evs = await get(`${API}/odds?apiKey=${encodeURIComponent(key)}&regions=us,us2&markets=h2h&oddsFormat=american`);
+    const now = Date.now(), week = now + 8*864e5;
+    const upcoming = evs.filter(e => { const t = Date.parse(e.commence_time); return t > now && t < week; });
+    slateMode = true; slip = []; renderSlip();
+    rows = [];
+    for(const ev of upcoming){
+      const t = new Date(ev.commence_time);
+      const when = `${t.toLocaleDateString(undefined,{weekday:'short'})} ${t.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`;
+      for(const r of analyze(ev)){
+        r.gameId = ev.id; r.tier = verdict(r); r.tierRank = TIERS[r.tier][2];
+        r.why = `${ev.away_team} @ ${ev.home_team}, ${when}. ` + reasons(r);
+        rows.push(r);
+      }
+    }
+    $('resultTitle').textContent = `Moneyline slate: ${upcoming.length} games`;
+    const withHR = new Set(rows.map(r=>r.gameId)).size;
+    status(`Compared Hard Rock moneylines on ${withHR} of ${upcoming.length} upcoming games. Updated ${new Date().toLocaleTimeString()}.`);
+    render();
+  }catch(e){ status('Slate scan failed: '+e.message, true); }
+  $('scanSlate').disabled = false;
 }
 
 function render(){
@@ -548,6 +578,7 @@ $('clearSlip').onclick = () => { slip=[]; renderSlip(); render(); };
 $('saveKey').onclick = () => { store('oddsKey', $('key').value.trim()); status('Key saved on this computer.'); };
 $('loadGames').onclick = loadGames;
 $('scan').onclick = scan;
+$('scanSlate').onclick = scanSlate;
 $('demo').onclick = () => { slip=[]; renderSlip(); show(demoEvent()); status('Demo data — made-up prices to show how the board works. Not real odds.'); };
 
 // ---------- demo ----------
@@ -582,19 +613,26 @@ const SG_RULES = {
   4:    { sizes:[4],     minP:.04, maxP:.25, minEv:-2.5, label:'4-leg parlay', max:3 },
   bomb: { sizes:[3,4,5], minP:.03, maxP:.14, minEv:-3,   label:'Bomber',       max:Infinity },
 };
+// Moneyline legs are often 60-75% favorites, so slate parlays hit more often than prop parlays.
+const SG_RULES_SLATE = {
+  2:    { sizes:[2],       minP:.25, maxP:.80, minEv:-1.5, label:'2-team moneyline parlay', max:3 },
+  3:    { sizes:[3],       minP:.15, maxP:.65, minEv:-2,   label:'3-team moneyline parlay', max:Infinity },
+  4:    { sizes:[4],       minP:.08, maxP:.50, minEv:-2.5, label:'4-team moneyline parlay', max:3 },
+  bomb: { sizes:[4,5,6],   minP:.02, maxP:.15, minEv:-3,   label:'Moneyline bomber',        max:Infinity },
+};
 function combos(arr, k, start=0, cur=[], out=[]){
   if(cur.length===k){ out.push(cur.slice()); return out; }
   for(let i=start;i<arr.length;i++){ cur.push(arr[i]); combos(arr,k,i+1,cur,out); cur.pop(); }
   return out;
 }
 function buildSuggestions(mode){
-  const R = SG_RULES[mode], minN = +$('minBooks').value;
+  const R = (slateMode ? SG_RULES_SLATE : SG_RULES)[mode], minN = +$('minBooks').value;
   const pool = rows.filter(r => ['bet','lean','action'].includes(r.tier) && r.n >= minN && ($('showEst').checked || !r.oneSided))
                    .sort((a,b)=>b.ev-a.ev).slice(0, R.max===Infinity ? 18 : 14);
   let cands = [];
   for(const k of R.sizes){
     for(const c of combos(pool,k)){
-      if(new Set(c.map(l=>l.player)).size < c.length) continue;          // no two legs on one player
+      if(new Set(c.map(l=> slateMode ? l.gameId : l.player)).size < c.length) continue;   // no two legs on one player (slate: one team per game)
       if(!c.some(l=>l.tier==='bet'||l.tier==='lean')) continue;           // must have an anchor
       const p = parlay(c);
       if(p.p < R.minP || p.p > R.maxP || p.ev < R.minEv) continue;
@@ -629,15 +667,15 @@ function renderSuggest(){
   sgAll = []; let html = '';
   for(const g of groups){
     const list = buildSuggestions(g);
-    html += `<div style="margin-top:12px"><strong style="font-size:13px">${SG_RULES[g].label}s</strong>`;
+    html += `<div style="margin-top:12px"><strong style="font-size:13px">${(slateMode?SG_RULES_SLATE:SG_RULES)[g].label}s</strong>`;
     const SHOW = 9, shown = sgOpen[g] ? list : list.slice(0, SHOW);
     html += list.length ? `<span class="muted" style="font-size:12px"> · ${list.length} option${list.length>1?'s':''}, best edge first</span>` + sgCards(shown, g, sgAll.length)
       + (list.length > SHOW ? `<button class="ghost" data-more="${g}" style="margin-top:8px">${sgOpen[g] ? 'Show fewer' : `Show all ${list.length}`}</button>` : '')
-      : `<p class="muted" style="margin:6px 0 0">None on this board fits the rules for ${SG_RULES[g].label.toLowerCase()}s right now.</p>`;
+      : `<p class="muted" style="margin:6px 0 0">None on this board fits the rules for ${(slateMode?SG_RULES_SLATE:SG_RULES)[g].label.toLowerCase()}s right now.</p>`;
     html += `</div>`;
     sgAll.push(...shown);
   }
-  $('suggest').innerHTML = html + `<p class="note" style="margin-top:10px">Prices are leg by leg. Hard Rock's same-game price is usually lower, so check the app and type the price you get before you click Bet it.</p>`;
+  $('suggest').innerHTML = html + `<p class="note" style="margin-top:10px">${slateMode ? "These are different games, so Hard Rock's parlay price should be close to this. Still type the price you get before you click Bet it." : "Prices are leg by leg. Hard Rock's same-game price is usually lower, so check the app and type the price you get before you click Bet it."}</p>`;
   $('suggest').onclick = e => {
     const m = e.target.closest('button[data-more]'); if(m){ sgOpen[m.dataset.more] = !sgOpen[m.dataset.more]; renderSuggest(); return; }
     const b = e.target.closest('button[data-sg]'); if(!b) return; slip = sgAll[+b.dataset.sg].legs.slice(); renderSlip(); render(); };
