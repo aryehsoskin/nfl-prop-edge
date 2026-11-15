@@ -625,6 +625,26 @@ function combos(arr, k, start=0, cur=[], out=[]){
   for(let i=start;i<arr.length;i++){ cur.push(arr[i]); combos(arr,k,i+1,cur,out); cur.pop(); }
   return out;
 }
+// All-around ticket score (1-10): balances how likely it is to hit, how fairly it's priced,
+// and how solid the legs are, instead of ranking on edge alone.
+const TIER_CONF = { bet:1, lean:.75, action:.45, check:.2, pass:0 };
+function scoreTickets(list){
+  if(!list.length) return list;
+  const ps = list.map(t=>t.p).sort((a,b)=>a-b);
+  const pct = p => ps.length===1 ? 1 : ps.filter(x=>x<p).length/(ps.length-1);
+  for(const t of list){
+    const pS = pct(t.p);                                             // likelihood vs. the other options
+    const eS = Math.max(0, Math.min(1, (t.ev+3)/8));                 // -3% edge -> 0, +5% -> 1
+    const cS = t.legs.reduce((a,l)=>a + TIER_CONF[l.tier]*Math.min(1, l.n/6) * (l.spread>.08?.8:1), 0)/t.legs.length;
+    t.score = +(1 + 9*(0.40*pS + 0.35*eS + 0.25*cS)).toFixed(1);
+  }
+  const top = (k) => list.reduce((a,b)=> b[k]>a[k]?b:a);
+  list.forEach(t=>t.badges=[]); if(list.length < 2) return list;
+  top('score').badges.push('Best all-around'); top('p').badges.push('Most likely'); top('ev').badges.push('Best value');
+  return list;
+}
+const badgeHtml = t => (t.badges||[]).map(b=>`<span class="tag" style="color:var(--text);border-color:var(--accent)">${b}</span>`).join(' ');
+
 function buildSuggestions(mode){
   const R = (slateMode ? SG_RULES_SLATE : SG_RULES)[mode], minN = +$('minBooks').value;
   const pool = rows.filter(r => ['bet','lean','action'].includes(r.tier) && r.n >= minN && ($('showEst').checked || !r.oneSided))
@@ -639,8 +659,9 @@ function buildSuggestions(mode){
       cands.push({legs:c, ...p});
     }
   }
-  cands.sort((a,b)=> b.ev - a.ev || b.p - a.p);
-  if(R.max===Infinity) return cands;                                      // every qualifying ticket, best edge first
+  scoreTickets(cands);
+  cands.sort((a,b)=> b.score - a.score || b.ev - a.ev);
+  if(R.max===Infinity) return cands;                                      // every qualifying ticket, best all-around first
   const picked = [];
   for(const c of cands){                                                  // keep the options different from each other
     if(picked.every(q => c.legs.filter(l=>q.legs.includes(l)).length < Math.min(c.legs.length, q.legs.length))) picked.push(c);
@@ -651,7 +672,8 @@ function buildSuggestions(mode){
 function sgCards(list, mode, offset){
   const units = c => (mode==='bomb' || mode==='4') ? 0.5 : (c.ev >= 0 ? 1 : 0.5);
   return `<div class="sg">` + list.map((c,i) => `<div class="sg-card">
-      <div class="hd"><span>${c.legs.length} legs</span><span>${fmtAm(c.am)}</span></div>
+      <div class="hd"><span>${c.legs.length} legs · score ${c.score}/10</span><span>${fmtAm(c.am)}</span></div>
+      ${c.badges && c.badges.length ? `<div>${badgeHtml(c)}</div>` : ''}
       <ul>${c.legs.map(l=>`<li><span class="v ${TIERS[l.tier][1]}">${TIERS[l.tier][0]}</span> ${l.player} ${l.label} <span class="muted">${l.marketName}</span></li>`).join('')}</ul>
       <div class="meta">Hits ~${(c.p*100).toFixed(0)}% · edge <b class="${c.ev>=0?'pos':''}">${c.ev>=0?'+':''}${c.ev.toFixed(1)}%</b> · stake ~$${(units(c)*unit()).toFixed(0)}</div>
       <button class="ghost" data-sg="${offset+i}">Load into slip</button>
@@ -670,13 +692,14 @@ function buildKicker(){
     const p = parlay(c); if(p.ev < -3) continue;
     cores.push({legs:c, ...p});
   }
-  cores.sort((a,b)=> b.p-a.p || b.ev-a.ev);
+  scoreTickets(cores); cores.sort((a,b)=> b.score-a.score || b.p-a.p);
   const picked = [];
   for(const c of cores){ if(picked.every(q => c.legs.filter(l=>q.legs.includes(l)).length < Math.min(c.legs.length,q.legs.length))) picked.push(c); if(picked.length===4) break; }
   return picked.map(core => {
     const used = new Set(core.legs.map(l=>l.gameId));
-    const adds = kicks.filter(k => !used.has(k.gameId)).map(k => { const legs=[...core.legs,k]; return {kick:k, legs, ...parlay(legs)}; })
-                      .filter(a => a.ev >= -3).sort((a,b)=> b.ev-a.ev).slice(0,3);
+    let adds = kicks.filter(k => !used.has(k.gameId)).map(k => { const legs=[...core.legs,k]; return {kick:k, legs, ...parlay(legs)}; })
+                      .filter(a => a.ev >= -3);
+    scoreTickets(adds); adds.sort((a,b)=> b.score-a.score); adds.length = Math.min(adds.length, 3);
     return {core, adds};
   });
 }
@@ -689,19 +712,20 @@ function renderKicker(){
   for(const {core, adds} of list){
     const ci = sgAll.length; sgAll.push(core);
     html += `<div class="sg-card">
-      <div class="hd"><span>Core: ${core.legs.length} favorites</span><span>${fmtAm(core.am)}</span></div>
+      <div class="hd"><span>Core: ${core.legs.length} favorites · score ${core.score}/10</span><span>${fmtAm(core.am)}</span></div>
+      ${core.badges && core.badges.length ? `<div>${badgeHtml(core)}</div>` : ''}
       <ul>${core.legs.map(leg).join('')}</ul>
       <div class="meta">Hits ~${(core.p*100).toFixed(0)}% · edge <b class="${core.ev>=0?'pos':''}">${core.ev>=0?'+':''}${core.ev.toFixed(1)}%</b></div>
       <button class="ghost" data-sg="${ci}">Load core only</button>
       <div style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px;font-size:12px;color:var(--muted)">Add a kicker to push the payout:</div>
       ${adds.length ? adds.map(a => { const ai = sgAll.length; sgAll.push(a); return `<div style="font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center;padding:4px 0">
           <span>+ <span class="v ${TIERS[a.kick.tier][1]}">${TIERS[a.kick.tier][0]}</span> ${a.kick.player} <span class="muted">${fmtAm(a.kick.hr)}</span><br>
-          <span class="muted" style="font-size:12px">→ <b style="color:var(--text)">${fmtAm(a.am)}</b> · hits ~${(a.p*100).toFixed(0)}% · edge <b class="${a.ev>=0?'pos':''}">${a.ev>=0?'+':''}${a.ev.toFixed(1)}%</b></span></span>
+          <span class="muted" style="font-size:12px">→ <b style="color:var(--text)">${fmtAm(a.am)}</b> · score ${a.score} · hits ~${(a.p*100).toFixed(0)}% · edge <b class="${a.ev>=0?'pos':''}">${a.ev>=0?'+':''}${a.ev.toFixed(1)}%</b></span></span>
           <button class="ghost" data-sg="${ai}" style="padding:4px 8px;font-size:12px">Load</button></div>`; }).join('')
         : `<div class="muted" style="font-size:12px">No underdog on the board adds payout without costing too much.</div>`}
     </div>`;
   }
-  html += `</div><p class="note" style="margin-top:8px">The core is the bet most likely to cash. The kicker is a coin-flip or underdog (about 25–60% to win) that multiplies the payout, ranked by edge, so you're not overpaying for the upside. Different games, so Hard Rock's price should be close to this.</p>`;
+  html += `</div><p class="note" style="margin-top:8px">The core is the bet most likely to cash. The kicker is a coin-flip or underdog (about 25–60% to win) that multiplies the payout. Everything is ranked by an all-around score (hit chance, price and how solid the legs are), not edge alone. Different games, so Hard Rock's price should be close to this.</p>`;
   $('suggest').innerHTML = html;
   $('suggest').onclick = e => { const b = e.target.closest('button[data-sg]'); if(!b) return; slip = sgAll[+b.dataset.sg].legs.slice(); renderSlip(); render(); };
 }
@@ -717,7 +741,7 @@ function renderSuggest(){
     const list = buildSuggestions(g);
     html += `<div style="margin-top:12px"><strong style="font-size:13px">${(slateMode?SG_RULES_SLATE:SG_RULES)[g].label}s</strong>`;
     const SHOW = 9, shown = sgOpen[g] ? list : list.slice(0, SHOW);
-    html += list.length ? `<span class="muted" style="font-size:12px"> · ${list.length} option${list.length>1?'s':''}, best edge first</span>` + sgCards(shown, g, sgAll.length)
+    html += list.length ? `<span class="muted" style="font-size:12px"> · ${list.length} option${list.length>1?'s':''}, best all-around first</span>` + sgCards(shown, g, sgAll.length)
       + (list.length > SHOW ? `<button class="ghost" data-more="${g}" style="margin-top:8px">${sgOpen[g] ? 'Show fewer' : `Show all ${list.length}`}</button>` : '')
       : `<p class="muted" style="margin:6px 0 0">None on this board fits the rules for ${(slateMode?SG_RULES_SLATE:SG_RULES)[g].label.toLowerCase()}s right now.</p>`;
     html += `</div>`;
